@@ -25,13 +25,10 @@
 <body>
     <div id="map"></div>
 
-    <!-- Load your JS-wrapped dataset: defines window.WorldPoints -->
-    <script src="./world_points_50k.js"></script>
-
     <script>
         mapboxgl.accessToken = 'pk.eyJ1IjoiYS1tYXAiLCJhIjoiY21mcjVqd2RwMDV4ZDJrb2k2YzZ5NGRpNCJ9.d8P2yKy---yykg3xZW35dA';
 
-        // declare map 
+        // declare map
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/standard',
@@ -87,25 +84,60 @@
                 }
             });
 
-            // load data for the current viewport
-            function updateDataToViewport() {
+            // function to update data in viewport
+            async function updateDataToViewport() {
                 const b = map.getBounds();
                 const sw = b.getSouthWest();
                 const ne = b.getNorthEast();
 
-                // Filter the preloaded dataset to what's visible
-                const filtered = {
-                    type: 'FeatureCollection',
-                    features: (window.WorldPoints?.features || []).filter(f => {
-                        const [lon, lat] = f.geometry.coordinates;
-                        return lon >= sw.lng && lon <= ne.lng && lat >= sw.lat && lat <= ne.lat;
-                    })
+                // prepare bounds data for POST request
+                const boundsData = new URLSearchParams(); 
+                boundsData.append('minLat', sw.lat);
+                boundsData.append('minLng', sw.lng);
+                boundsData.append('maxLat', ne.lat);
+                boundsData.append('maxLng', ne.lng);
+
+                // fetch JSON data
+                const response = await fetch('dojo.php?act=get_customer_counts', {
+                    method: 'POST',
+                    body: boundsData,
+                    //key: '9f8f6b17-468a-48aa-b62e-012458736e86'
+                });
+
+                if (!response.ok) {
+                    console.log(response);
+                    console.error(`Fetch error: ${response.status} ${response.statusText}`);
+                    return;
+                }
+
+                const data = await response.json();
+
+                const editedData = Object.entries(data.locations || {}).map(([id, loc]) => ({
+                    type: "Feature",
+                    geometry: {
+                        type: "Point",
+                        coordinates: [Number(loc.longitude), Number(loc.latitude)]
+                    },
+                    properties: {
+                        id: loc.id,
+                    }
+                }));
+
+                // Construct the GeoJSON FeatureCollection
+                const feature = {
+                    type: "FeatureCollection",
+                    features: editedData
                 };
-                map.getSource('points').setData(filtered);
+
+                // Update map source with all points
+                map.getSource('points').setData(feature);
             }
+
 
             map.on('moveend', updateDataToViewport);
             updateDataToViewport();
+
+
 
             // what happens when you click on a cluster
             map.addInteraction('click-clusters', {
