@@ -1,5 +1,11 @@
 <?php
 
+/*
+echo phpinfo();
+die();
+*/
+
+
 //error_reporting(E_ALL ^ (E_NOTICE | E_WARNING));
 
 include_once("Traffic_Data/config.inc.php");
@@ -2778,7 +2784,7 @@ switch($act){
 
 	case "get_customer_counts":
 
-	debugTrace(-1);
+	//jsonTrace($_POST, 1);
 
 
 	$user = getUserDB($_SESSION['user_guid']);
@@ -2819,7 +2825,7 @@ switch($act){
 
 	if($counts = getCustomerMapCountsDB($customer_guid, $minLat, $minLng, $maxLat, $maxLng, $opts, $min_start_date, $max_end_date, $err)){
 
-		  jsonTrace($counts[0]);
+		  //jsonTrace($counts[0]);
 
 			$resultant['err'] = 0;
 
@@ -2829,7 +2835,7 @@ switch($act){
 					$count_array[$count['location_id']]['longitude'] = $count['longitude'];
 					$count_array[$count['location_id']]['latitude'] = $count['latitude'];
 
-					jsonTrace($count, 1);
+					//jsonTrace($count, 1);
 
 					//$count_array[$count['location_id']]['cust_id'] = $count['cust_id'];
 					//$count_array[$count['location_id']]['control_type'] = $count['control_type'];
@@ -2847,7 +2853,7 @@ switch($act){
 
 			$resultant['locations'] = $count_array;
 
-			jsonTrace($resultant, 1);
+			//jsonTrace($resultant, 1);
 
 	    echo json_encode($resultant);
 
