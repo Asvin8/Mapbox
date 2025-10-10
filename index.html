@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Create and style clusters (viewport-only)</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.15.0/mapbox-gl.css" rel="stylesheet" />
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.15.0/mapbox-gl.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+
+    <!-- Load your JS-wrapped dataset: defines window.WorldPoints -->
+    <script src="./world_points_50k.js"></script>
+
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoiYS1tYXAiLCJhIjoiY21mcjVqd2RwMDV4ZDJrb2k2YzZ5NGRpNCJ9.d8P2yKy---yykg3xZW35dA';
+
+        // declare map 
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/standard',
+            config: { basemap: { theme: 'monochrome', lightPreset: 'night' } },
+            center: [-79.3832, 43.6532], // Toronto
+            zoom: 10
+        });
+
+        // what happens upon loading the map
+        map.on('load', () => {
+            map.addSource('points', {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: [] }, // empty data to start
+                cluster: true,
+                clusterMaxZoom: 14,
+                clusterRadius: 50,
+                generateId: true
+            });
+
+            // add layer for clusters
+            map.addLayer({
+                id: 'clusters',
+                type: 'circle',
+                source: 'points',
+                filter: ['has', 'point_count'],
+                paint: {
+                    'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 100, '#f1f075', 750, '#f28cb1'],
+                    'circle-radius': ['step', ['get', 'point_count'], 20, 100, 30, 750, 40],
+                    'circle-emissive-strength': 1
+                }
+            });
+
+            map.addLayer({
+                id: 'cluster-count',
+                type: 'symbol',
+                source: 'points',
+                filter: ['has', 'point_count'],
+                layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12 }
+            });
+
+            // add layer for unclustered points
+            map.addLayer({
+                id: 'unclustered-point',
+                type: 'circle',
+                source: 'points',
+                filter: ['!', ['has', 'point_count']],
+                paint: {
+                    'circle-color': '#11b4da',
+                    'circle-radius': 4,
+                    'circle-stroke-width': 1,
+                    'circle-stroke-color': '#fff',
+                    'circle-emissive-strength': 1
+                }
+            });
+
+            // load data for the current viewport
+            function updateDataToViewport() {
+                const b = map.getBounds();
+                const sw = b.getSouthWest();
+                const ne = b.getNorthEast();
+
+                // Filter the preloaded dataset to what's visible
+                const filtered = {
+                    type: 'FeatureCollection',
+                    features: (window.WorldPoints?.features || []).filter(f => {
+                        const [lon, lat] = f.geometry.coordinates;
+                        return lon >= sw.lng && lon <= ne.lng && lat >= sw.lat && lat <= ne.lat;
+                    })
+                };
+                map.getSource('points').setData(filtered);
+            }
+
+            map.on('moveend', updateDataToViewport);
+            updateDataToViewport();
+
+            // what happens when you click on a cluster
+            map.addInteraction('click-clusters', {
+                type: 'click',
+                target: { layerId: 'clusters' },
+                handler: (e) => {
+                    const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+                    if (!features.length) return;
+                    const clusterId = features[0].properties.cluster_id;
+                    map.getSource('points').getClusterExpansionZoom(clusterId, (err, zoom) => {
+                        if (err) return;
+                        map.easeTo({ center: features[0].geometry.coordinates, zoom });
+                    });
+                }
+            });
+
+            // what happens when you click on an unclustered point
+            map.addInteraction('click-unclustered-point', {
+                type: 'click',
+                target: { layerId: 'unclustered-point' },
+                handler: async (e) => {
+                    const coordinates = e.feature.geometry.coordinates.slice();
+                    const featureId = e.feature.properties?.id ?? null;
+                    const popup = new mapboxgl.Popup().setLngLat(coordinates).addTo(map);
+
+                    try {
+                        const resp = await fetch('http://127.0.0.1:8000/test-backend', {
+                            method: 'GET',
+                        });
+
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                        const data = await resp.json();
+                        popup.setHTML(data + "\n" + coordinates.toString());
+                    } catch (err) {
+                        popup.setHTML(`Error contacting API.<br><small>${String(err)}</small>`);
+                    }
+                }
+            });
+
+            // change mouse cursor when hovering over clusters or points
+            map.addInteraction('clusters-mouseenter', {
+                type: 'mouseenter',
+                target: { layerId: 'clusters' },
+                handler: () => { map.getCanvas().style.cursor = 'pointer'; }
+            });
+
+            // reset mouse cursor when not hovering over clusters or points
+            map.addInteraction('clusters-mouseleave', {
+                type: 'mouseleave',
+                target: { layerId: 'clusters' },
+                handler: () => { map.getCanvas().style.cursor = ''; }
+            });
+
+            // change mouse cursor when hovering over unclustered points
+            map.addInteraction('unclustered-mouseenter', {
+                type: 'mouseenter',
+                target: { layerId: 'unclustered-point' },
+                handler: () => { map.getCanvas().style.cursor = 'pointer'; }
+            });
+
+            // reset mouse cursor when not hovering over unclustered points
+            map.addInteraction('unclustered-mouseleave', {
+                type: 'mouseleave',
+                target: { layerId: 'unclustered-point' },
+                handler: () => { map.getCanvas().style.cursor = ''; }
+            });
+        });
+    </script>
+</body>
+
+</html>
