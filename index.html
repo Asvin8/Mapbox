@@ -26,6 +26,9 @@
     <div id="map"></div>
 
     <script>
+        var response = null; 
+        var data = null; 
+
         mapboxgl.accessToken = 'pk.eyJ1IjoiYS1tYXAiLCJhIjoiY21mcjVqd2RwMDV4ZDJrb2k2YzZ5NGRpNCJ9.d8P2yKy---yykg3xZW35dA';
 
         // declare map
@@ -98,7 +101,7 @@
                 boundsData.append('maxLng', ne.lng);
 
                 // fetch JSON data
-                const response = await fetch('dojo.php?act=get_customer_counts', {
+                response = await fetch('dojo.php?act=get_customer_counts', {
                     method: 'POST',
                     body: boundsData,
                     //key: '9f8f6b17-468a-48aa-b62e-012458736e86'
@@ -110,7 +113,7 @@
                     return;
                 }
 
-                const data = await response.json();
+                data = await response.json();
 
                 const editedData = Object.entries(data.locations || {}).map(([id, loc]) => ({
                     type: "Feature",
@@ -136,7 +139,6 @@
 
             map.on('moveend', updateDataToViewport);
             updateDataToViewport();
-
 
 
             // what happens when you click on a cluster
