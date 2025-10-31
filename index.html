@@ -19,6 +19,13 @@
             bottom: 0;
             width: 100%;
         }
+
+        .fixed-width-popup .mapboxgl-popup-content {       
+            width: var(--popup-width, 400px);
+            max-width: 400px;  /* prevent shrinking */
+            box-sizing: border-box;
+        }
+
     </style>
 </head>
 
@@ -26,21 +33,17 @@
     <div id="map"></div>
 
     <script>
-        var response = null; 
-        var data = null; 
-
         mapboxgl.accessToken = 'pk.eyJ1IjoiYS1tYXAiLCJhIjoiY21mcjVqd2RwMDV4ZDJrb2k2YzZ5NGRpNCJ9.d8P2yKy---yykg3xZW35dA';
 
         // declare map
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/standard',
-            config: { basemap: { theme: 'monochrome', lightPreset: 'night' } },
             center: [-79.3832, 43.6532], // Toronto
             zoom: 10
         });
 
-        // what happens upon loading the map
+        // what happens upon ing the map
         map.on('load', () => {
             map.addSource('points', {
                 type: 'geojson',
@@ -89,9 +92,12 @@
 
             // function to update data in viewport
             async function updateDataToViewport() {
-                const b = map.getBounds();
-                const sw = b.getSouthWest();
-                const ne = b.getNorthEast();
+                const bounds = map.getBounds();
+                const sw = bounds.getSouthWest();
+                const ne = bounds.getNorthEast();
+
+                var customer_counts_response = null;
+                var customer_counts_json = null; 
 
                 // prepare bounds data for POST request
                 const boundsData = new URLSearchParams(); 
@@ -101,35 +107,31 @@
                 boundsData.append('maxLng', ne.lng);
 
                 // fetch JSON data
-                response = await fetch('dojo.php?act=get_customer_counts', {
+                customer_counts_response = await fetch('dojo.php?act=get_customer_counts', {
                     method: 'POST',
-                    body: boundsData,
-                    //key: '9f8f6b17-468a-48aa-b62e-012458736e86'
+                    body: boundsData
                 });
 
-                if (!response.ok) {
-                    console.log(response);
-                    console.error(`Fetch error: ${response.status} ${response.statusText}`);
-                    return;
+                customer_counts_json = await customer_counts_response.json();
+
+                // Convert to GeoJSON
+                const customer_counts_geojson = [];
+
+                for(var i in customer_counts_json.locations) {
+                    customer_counts_geojson.push({
+                        type: "Feature", 
+                        geometry: {
+                            type: "Point", 
+                            coordinates: [Number(customer_counts_json.locations[i].longitude), Number(customer_counts_json.locations[i].latitude)]
+                        },
+                        properties: {
+                            location_id: customer_counts_json.locations[i].location_id
+                        }
+                    });
                 }
-
-                data = await response.json();
-
-                const editedData = Object.entries(data.locations || {}).map(([id, loc]) => ({
-                    type: "Feature",
-                    geometry: {
-                        type: "Point",
-                        coordinates: [Number(loc.longitude), Number(loc.latitude)]
-                    },
-                    properties: {
-                        id: loc.id,
-                    }
-                }));
-
-                // Construct the GeoJSON FeatureCollection
                 const feature = {
                     type: "FeatureCollection",
-                    features: editedData
+                    features: customer_counts_geojson
                 };
 
                 // Update map source with all points
@@ -139,7 +141,6 @@
 
             map.on('moveend', updateDataToViewport);
             updateDataToViewport();
-
 
             // what happens when you click on a cluster
             map.addInteraction('click-clusters', {
@@ -155,29 +156,74 @@
                     });
                 }
             });
+            
 
             // what happens when you click on an unclustered point
             map.addInteraction('click-unclustered-point', {
                 type: 'click',
                 target: { layerId: 'unclustered-point' },
                 handler: async (e) => {
+                    
                     const coordinates = e.feature.geometry.coordinates.slice();
-                    const featureId = e.feature.properties?.id ?? null;
-                    const popup = new mapboxgl.Popup().setLngLat(coordinates).addTo(map);
+                    let location_id = e.feature.properties.location_id;
+                    
+                    const popup = new mapboxgl.Popup({ className: 'fixed-width-popup' }).setLngLat(coordinates).addTo(map);
 
                     try {
-                        const resp = await fetch('http://127.0.0.1:8000/test-backend', {
-                            method: 'GET',
+                        const body = new URLSearchParams();
+                        body.append('location_id', location_id);
+
+                        var resp = await fetch('dojo.php?act=get_location_counts', {
+                            method: 'POST',
+                            body,
                         });
 
-                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                        const data = await resp.json();
-                        popup.setHTML(data + "\n" + coordinates.toString());
+                        const json = await resp.json();
+
+                        if (!json.err) {
+                            
+                            var box_width = Math.round(11 * json.location.name.length); 
+
+                            var wContent = "<div style='text-align: center; padding-top: 10px; padding-bottom: 7px; font-size:10pt; color: #666666; line-height: 18pt;'>";
+                            wContent += '<b><a style="color: #666666;" href="/location.php?location_id=' + location_id + '" data-fancybox data-options=\'{"toolbar" : "true", "smallBtn" : "true", "type" : "iframe", "iframe" : {"preload" : false, "css" : {"width" : "600px"}}}\'>' + json.location.name + '</a></b>';
+
+                            wContent += '<br>Active Closures: ' + (json.location.active_closures > 0 ? json.location.active_closures + '&nbsp; <img src="/images/warn_checkbox.png" style="vertical-align:bottom; margin-bottom: 2px;">' : 'none');
+
+                            wContent += '<br>Control Type: ' + (json.location.control_type ? json.location.control_type : 'unknown') + '<br>Custom ID: ' + (json.location.cust_id ? json.location.cust_id : 'unknown') + '</div>';
+
+                            for (var key in json.location.counts) {
+                                wContent += "<div style='padding: 10px; margin-top: 7px; background-color: #eeeeee; border-radius: 7px; border: solid thin #ccc; padding-bottom: 7px;'>";
+                                wContent += "<div style='display: inline-block; background-color: #fff; font-size: 8pt; text-decoration: none; color: #000; border: solid thin #999; padding-right: 6px; padding-left: 6px; padding-top: 1px; padding-bottom: 1px; border-radius: 4px; margin-right: 8px;'><a style='color: #000; text-decoration: none;' target='_blank' href='/index.php?act=view_study&study_guid=" + json.location.counts[key].study_guid + "'>" + json.location.counts[key].study_id + "</a></div>";
+                                wContent += "   <div style='line-height: 14pt; vertical-align: top; display: inline-block; padding-right: 10px; width: 105px;'>" + json.location.counts[key].ymd + ' (' + json.location.counts[key].day + ')<br><center>' + json.location.counts[key].age_in_years + ' years old</center></div>';
+                                wContent += "    <div style='vertical-align: top; display: inline-block; padding-right: 8px;'>";
+
+                                for (var item in json.location.counts[key].schedules) {
+                                    wContent += "<div style='padding-bottom: 5px;'>";
+                                    wContent += json.location.counts[key].schedules[item].time_from;
+                                    wContent += ' - ';
+                                    wContent += json.location.counts[key].schedules[item].time_to;
+                                    wContent += "</div>";
+                                }
+
+                                wContent += "    </div>";
+                                wContent += "    <div style='display: inline-block; background-color: #fff; font-size: 8pt; text-decoration: none; color: #000; border: solid thin #999; padding-right: 6px; padding-left: 6px; padding-top: 1px; padding-bottom: 1px; border-radius: 4px;'><a style='color: #000; text-decoration: none;' target='_blank' href='/index.php?act=view_count&count_guid=" + json.location.counts[key].count_guid + "'>View</a></div>";
+                                wContent += "<div style='text-align: center; display: inline-block; padding-right: 10px; padding-left: 10px;'>Exchange<br><input onClick=\"updateExchange('" + json.location.counts[key].count_guid + "', this);\" type='checkbox' " + (json.location.counts[key].open_data_exchange == 1 ? "checked" : "") + " value='exchange'></div>";
+                                wContent += "</div>";
+                            }
+
+                            popup.setHTML(wContent);
+                            popup.getElement().style.setProperty('width', box_width);
+
+                        } else {
+                            popup.setHTML(json.error); 
+                        }
                     } catch (err) {
-                        popup.setHTML(`Error contacting API.<br><small>${String(err)}</small>`);
+                        popup.setHTML(`Error loading counts.<br><small>${String(err)}</small>`);
                     }
+
                 }
             });
+            
 
             // change mouse cursor when hovering over clusters or points
             map.addInteraction('clusters-mouseenter', {
