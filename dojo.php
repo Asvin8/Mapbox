@@ -2785,10 +2785,11 @@ switch($act){
 	case "get_customer_counts":
 
 	//jsonTrace($_POST, 1);
+	debugTrace('get customer counts');
 
 
 	$user = getUserDB($_SESSION['user_guid']);
-	$customer = getCustomerDB($user['customer_guid'], $err);
+	$customer = getCustomerDB($user['customer_guid'], $err); 
 
 	$err="";
 
@@ -2823,37 +2824,19 @@ switch($act){
 	$max_end_date = isset($_SESSION['customer_map']['max_end_date']) ? $_SESSION['customer_map']['max_end_date'] : time();
 	$min_start_date = isset($_SESSION['customer_map']['min_start_date']) ? $_SESSION['customer_map']['min_start_date'] : strtotime('September 1, 2012');
 
-	if($counts = getCustomerMapCountsDB($customer_guid, $minLat, $minLng, $maxLat, $maxLng, $opts, $min_start_date, $max_end_date, $err)){
-
-		  //jsonTrace($counts[0]);
+	if($counts = getCustomerMapCountsDB_v2($customer_guid, $minLat, $minLng, $maxLat, $maxLng, $opts, $min_start_date, $max_end_date, $err)){
 
 			$resultant['err'] = 0;
 
-			foreach($counts as $key=>$count){
+			foreach($counts as $key=>$count) {
 
-					$count_array[$count['location_id']]['name'] = $count['name'];
+					//$count_array[$count['location_id']]['name'] = $count['name'];
 					$count_array[$count['location_id']]['longitude'] = $count['longitude'];
 					$count_array[$count['location_id']]['latitude'] = $count['latitude'];
-
-					//jsonTrace($count, 1);
-
-					//$count_array[$count['location_id']]['cust_id'] = $count['cust_id'];
-					//$count_array[$count['location_id']]['control_type'] = $count['control_type'];
-					//$count_array[$count['location_id']]['counts'][$count['count_guid']]['owner_guid'] = $count['owner_guid'];
-					//$count_array[$count['location_id']]['counts'][$count['count_guid']]['customer_prefix'] = $count['customer_prefix'];
-					//$count_array[$count['location_id']]['counts'][$count['count_guid']]['status'] = $count['status'];
-					//$count_array[$count['location_id']]['counts'][$count['count_guid']]['ymd'] = $count['ymd'];
-					//$count_array[$count['location_id']]['counts'][$count['count_guid']]['day'] = $count['day'];
-					//$count_array[$count['location_id']]['counts'][$count['count_guid']]['schedules'][$count['schedule_id']] = array('time_from'=>$count['time_from'], 'time_to'=>$count['time_to']);
-					//$count_array[$count['location_id']]['counts'][$count['count_guid']]['day'] = $count['day'];
-					//$count_array[$count['location_id']]['counts'][$count['count_guid']] = 1;//['age_in_years'] = round((time() - $count['start_time']) / (365 * 24 * 3600), 1);
-
+					$count_array[$count['location_id']]['location_id'] = $count['location_id'];
 			}
-
-
+			
 			$resultant['locations'] = $count_array;
-
-			//jsonTrace($resultant, 1);
 
 	    echo json_encode($resultant);
 
@@ -2889,6 +2872,8 @@ switch($act){
 
 	$user = getUserDB($_SESSION['user_guid']);
 
+	jsonTrace($_POST, 1);
+
 	$err="";
 
 	$opts = "";
@@ -2914,6 +2899,9 @@ switch($act){
 	$count_array = array();
 
 	$location = getLocationDB($location_id, $err);
+
+
+
 
 	if($counts = getLocationCountsDB($location_id, $minLat, $minLng, $maxLat, $maxLng, $opts, $min_start_date, $max_end_date, $err)){
 
@@ -2943,10 +2931,14 @@ switch($act){
 			$resultant['location']['cust_id'] = $location['cust_id'];
 			$resultant['location']['control_type'] = $location['control_type'];
 			$resultant['location']['active_closures'] = $location['active_closures'];
+			//jsonTrace($resultant, 1);
 
 	    echo json_encode($resultant);
 
 	} else {
+
+
+		//jsonTrace($counts, 1);
 
 	    $resultant['err'] = 1;
 	    $resultant['message'] = $err;
